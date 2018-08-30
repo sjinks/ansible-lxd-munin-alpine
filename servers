@@ -1,0 +1,2 @@
+[containers]
+munin ansible_connection=lxd

@@ -1,0 +1,5 @@
+FCGI_SOCKET=/var/run/fastcgi-graph.sock
+FCGI_PROGRAM=/usr/share/webapps/munin/cgi/munin-cgi-graph
+FCGI_USER=munin
+FCGI_GROUP=munin
+FCGI_EXTRA_OPTIONS="-U nginx"

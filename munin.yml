@@ -1,0 +1,124 @@
+---
+- hosts: localhost
+  gather_facts: no
+  connection: local
+  tasks:
+    - debug: var=lxd_devices
+    - name: Create container
+      lxd_container:
+        name: munin
+        state: started
+        source:
+          type: image
+          mode: pull
+          server: https://images.linuxcontainers.org
+          protocol: lxd
+          alias: alpine/edge/amd64
+        devices: "{{ lxd_devices }}"
+        config: "{{ lxd_config }}"
+        profiles: "{{ lxd_profile }}"
+        wait_for_ipv4_addresses: true
+
+    - name: check python is installed in container
+      raw: apk info -e python
+      register: python_install_check
+      changed_when: false
+      failed_when: false
+      delegate_to: munin
+    - name: update package list
+      raw: apk update
+      when: python_install_check.rc == 1
+      failed_when: false
+      delegate_to: munin
+    - name: install python in container
+      raw: apk add python
+      when: python_install_check.rc == 1
+      delegate_to: munin
+
+- hosts:
+    - munin
+  gather_facts: no
+  tasks:
+    - name: Set up /etc/profile.d/hardening.sh
+      copy: src=profile_d_hardening.sh dest=/etc/profile.d/hardening.sh mode=0644 owner=root group=root
+    - name: Get rid of getty
+      replace: dest=/etc/inittab regexp="^::respawn:/sbin/getty 38400 console" replace="#::respawn:/sbin/getty 38400 console"
+      notify: reload init
+
+    - name: Install munin and nginx
+      apk: name="{{ item }}" state=latest
+      with_items:
+        - munin
+        - nginx
+
+    # Munin
+    - name: Configure /etc/munin/munin.conf
+      template: src=munin.conf.j2 dest=/etc/munin/munin.conf owner=root group=root mode=0644 backup=yes
+    - name: Set up /etc/munin/munin-conf.d/nodes.conf
+      template: src=nodes.conf.j2 dest=/etc/munin/munin-conf.d/nodes.conf owner=root group=root mode=0644 backup=yes
+    - name: Set up extra configuration files, if any
+      template: src="{{ item }}.j2" dest="/etc/munin/munin-conf.d/{{ item }}" owner=root group=root mode=0644 backup=yes
+      with_items: "{{ munin_extra_conf_files }}"
+    - name: Set up cron job (1)
+      cron: name="Run munin-cron at reboot" special_time=reboot user=munin job="if [ -x /usr/bin/munin-cron ]; then /usr/bin/munin-cron; fi"
+    - name: Set up cron job (2)
+      cron: name="Run munin-cron every 5 minutes" minute="*/5" user=munin job="if [ -x /usr/bin/munin-cron ]; then /usr/bin/munin-cron; fi"
+    - name: Fix permissions (/var/lib/munin)
+      file: path=/var/lib/munin state=directory owner=munin
+    - name: Fix permissions (/var/lib/munin-node/plugin-state)
+      file: path=/var/lib/munin-node/plugin-state state=directory owner=nobody mode=0775
+    - name: Fix permissions (/var/lib/munin/cgi-tmp)
+      file: path=/var/lib/munin/cgi-tmp state=directory owner=munin
+
+    # spawn-fcgi
+    - block:
+        - name: Install packages
+          apk: name="{{ item }}" state=latest
+          with_items:
+            - spawn-fcgi
+            - perl-cgi-fast
+        - name: Configure spawn-fcgi
+          copy: src="{{ item }}" dest="/etc/conf.d/{{ item }}" owner=root group=root mode=0644 backup=yes
+          with_items:
+            - spawn-fcgi.munin-graph
+            - spawn-fcgi.munin-html
+        - name: Create init scripts
+          file: src=/etc/init.d/spawn-fcgi dest="/etc/init.d/{{ item }}" state=link
+          with_items:
+            - spawn-fcgi.munin-graph
+            - spawn-fcgi.munin-html
+        - name: Bring up services
+          service: name="{{ item }}" state=started enabled=yes
+          with_items:
+            - spawn-fcgi.munin-graph
+            - spawn-fcgi.munin-html
+      when: cgi
+
+    # munin-node
+    - name: Set node name
+      lineinfile: insertafter="^#host_name\s.*$" line="host_name munin" path=/etc/munin/munin-node.conf
+      notify: reload munin-node
+    - name: Configure node
+      shell: munin-node-configure --shell | ash
+      args:
+        creates: /etc/munin/plugins/users
+      notify: reload munin-node
+    - name: Bring up munin-node
+      service: name=munin-node state=started enabled=yes
+
+    # nginx
+    - name: Delete /etc/nginx/conf.d/default.conf
+      file: path=/etc/nginx/conf.d/default.conf state=absent
+      notify: reload nginx
+    - name: Install /etc/nginx/conf.d/munin.conf
+      template: src=nginx-munin.conf.j2 dest=/etc/nginx/conf.d/munin.conf owner=root group=root mode=0644 backup=yes
+      notify: reload nginx
+    - name: Bring up nginx
+      service: name=nginx enabled=yes state=started
+  handlers:
+    - name: reload nginx
+      service: name=nginx state=reloaded
+    - name: reload init
+      command: kill -HUP 1
+    - name: reload munin-node
+      service: name=munin-node state=restarted

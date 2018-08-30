@@ -1,0 +1,16 @@
+---
+# Additional devices in the container (host: localhost)
+lxd_devices: {}
+# Additional LXD configuration (host: localhost)
+lxd_config: {}
+# LXD profile to use (host: localhost)
+lxd_profile: ["default"]
+
+# Munin nodes (host: munin)
+# nodes:
+#   - { name: localhost, address: 127.0.0.1, group: local  }
+nodes: {}
+# Whether to use munin-cgi (host: munin)
+cgi: False
+# Additonal configuration files to put to /etc/monit/munin-conf.d (host: munin)
+munin_extra_conf_files: []

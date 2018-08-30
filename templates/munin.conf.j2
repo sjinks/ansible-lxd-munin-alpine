@@ -1,0 +1,12 @@
+dbdir     /var/lib/munin
+htmldir   /usr/share/webapps/munin/html
+logdir    /var/log/munin
+rundir    /run/munin
+tmpldir   /etc/munin/templates
+staticdir /etc/munin/static
+
+{% if cgi %}
+html_strategy cgi
+{% endif %}
+
+includedir /etc/munin/munin-conf.d

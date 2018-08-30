@@ -1,0 +1,51 @@
+server {
+	listen 80;
+
+	root /usr/share/webapps/munin/html;
+	index index.html;
+
+{% if cgi %}
+	location = / {
+		expires modified 510s;
+		fastcgi_split_path_info ^(/)(.*);
+		fastcgi_param PATH_INFO $fastcgi_path_info;
+		fastcgi_pass unix:/var/run/fastcgi-html.sock-1;
+		include fastcgi_params;
+	}
+
+	location ^~ /static/ {
+		alias /etc/munin/static/;
+	}
+
+	location ~ ^/(.*?\.html$) {
+		expires modified 510s;
+		fastcgi_split_path_info ^(/)(.*);
+		fastcgi_param PATH_INFO $fastcgi_path_info;
+		fastcgi_pass unix:/var/run/fastcgi-html.sock-1;
+		include fastcgi_params;
+	}
+
+	location ^~ /munin-cgi/munin-cgi-graph/ {
+		fastcgi_split_path_info ^(/munin-cgi/munin-cgi-graph)(.*);
+		fastcgi_param PATH_INFO $fastcgi_path_info;
+		fastcgi_pass unix:/var/run/fastcgi-graph.sock-1;
+		include fastcgi_params;
+	}
+{% endif %}
+
+	location ~ \.ico$ {
+		expires 30d;
+	}
+
+	location ~ \.css$ {
+		expires 7d;
+	}
+
+	location ~ \.png$ {
+		expires modified 510s;
+	}
+
+	location ~ /\.ht {
+		return 444;
+	}
+}

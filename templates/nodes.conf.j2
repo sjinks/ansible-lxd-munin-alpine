@@ -1,0 +1,8 @@
+{% for node in nodes %}
+[{{ node.group }};{{node.name}}]
+	address {{ node.address }}
+
+{% endfor %}
+
+[munin;munin]
+	address 127.0.0.1
